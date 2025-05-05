@@ -23,7 +23,7 @@ from .math import closest_segment_to_segment_points
 from .math import normalize_with_norm
 from .support import group_key
 from .support import mat33_from_cols
-
+from .collision_sdf import *
 
 @wp.struct
 class GeomPlane:
@@ -259,6 +259,31 @@ def capsule_capsule(
 
 
 @wp.func
+def sphere_ellipsoid(s: GeomSphere, e: GeomEllipsoid, worldid: int, d: Data, margin: float,
+  geom_indices: wp.vec2i):    
+    params = OptimizationParams()
+    params.rel_mat = wp.transpose(s.rot) * e.rot
+    params.rel_pos = wp.transpose(s.rot) * (e.pos - s.pos)
+    params.size1 = wp.vec3(s.radius, 0.0, 0.0)
+    params.size2 = e.size
+
+    x0 = 0.5 * (s.pos + e.pos)
+    x0_transformed = wp.transpose(e.rot) * (x0 - e.pos)
+    
+    _, pos = wp.static(gradient_descent(static_type1, static_type2))(x0_transformed, 10, params)
+
+    pos_s = params.rel_mat * pos + params.rel_pos
+    dist = sphere(pos_s, params.size1) + ellipsoid(pos, params.size2)
+    grad1 = grad_sphere(pos_s)
+    grad2 = grad_ellipsoid(pos, params.size2) 
+    n = grad1 - grad2
+    pos = e.rot * pos + e.pos
+    n = e.rot * n
+    f = wp.normalize(n)
+    pos3 = pos + f* dist/2.0 #todo
+    write_contact(d, dist, pos3, make_frame(n), margin, geom_indices, worldid)
+
+@wp.func
 def plane_capsule(
   plane: GeomPlane,
   cap: GeomCapsule,
@@ -291,14 +316,25 @@ def plane_capsule(
 
 _collision_functions = {
   (GeomType.PLANE.value, GeomType.SPHERE.value): plane_sphere,
+  
   (GeomType.SPHERE.value, GeomType.SPHERE.value): sphere_sphere,
   (GeomType.PLANE.value, GeomType.CAPSULE.value): plane_capsule,
   (GeomType.CAPSULE.value, GeomType.CAPSULE.value): capsule_capsule,
+  (GeomType.SPHERE.value, GeomType.ELLIPSOID.value): sphere_ellipsoid,
 }
 
 
+static_type1 = None
+static_type2 = None
+
+def set(type1, type2):
+  global static_type1, static_type2
+  static_type1 = wp.static(type1) 
+  static_type2 = wp.static(type2)
+
 def create_collision_function_kernel(type1, type2):
   key = group_key(type1, type2)
+  set(type1, type2)
 
   @wp.kernel
   def _collision_function_kernel(

@@ -67,10 +67,25 @@ class ConvexTest(parameterized.TestCase):
         </mujoco>
         """
 
+  _ELLIPSOID_SPHERE = """
+    <mujoco>
+      <worldbody>
+        <body>
+          <geom size=".15 .03 .05" type="ellipsoid"/>
+        </body>
+        <body pos="0 0 0.08">
+          <freejoint/>
+          <geom size=".05" type="sphere"/>
+        </body>
+      </worldbody>
+    </mujoco>
+  """
+
   @parameterized.parameters(
-    (_BOX_PLANE),
+     (_BOX_PLANE),
     (_SPHERE_SPHERE),
     (_CAPSULE_CAPSULE),
+    (_ELLIPSOID_SPHERE),
   )
   def test_convex_collision(self, xml_string):
     """Tests convex collision with different geometries."""
